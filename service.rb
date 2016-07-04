@@ -1,8 +1,11 @@
 require 'bundler'
 Bundler.require(:default, ENV['RACK_ENV'] || :development)
 
-require 'db'
+require 'utils/db'
 $db_client = DBClient.new()
+
+require 'utils/cdn'
+$cdn_client = CDNClient.new()
 
 module Emoticons
     class API < Grape::API
