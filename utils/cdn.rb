@@ -1,5 +1,5 @@
 require 'qiniu'
-require 'secrets'
+require_relative '../secrets'
 
 class CDNClient
     BUCKET = 'facehub'
@@ -23,4 +23,12 @@ class CDNClient
     def _gen_url(key)
         Qiniu::Auth.authorize_download_url(PRIVATE_URL + '/' + key, {expires_in: EXPIRES_IN})
     end
+end
+
+if __FILE__ == $0
+    cdn_client = CDNClient.new()
+
+    ARGV.each do |a|
+        p cdn_client.full_url(a)
+    end    
 end

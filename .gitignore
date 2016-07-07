@@ -1,2 +1,5 @@
 Gemfile.lock
 secrets.rb
+.DS_Store
+tmp
+log

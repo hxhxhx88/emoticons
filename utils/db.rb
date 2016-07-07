@@ -1,5 +1,5 @@
 require 'pg'
-require 'secrets'
+require_relative '../secrets'
 
 class DBClient
     def initialize
@@ -12,20 +12,20 @@ class DBClient
         )
     end
 
-    def fetch_many(query)
-        @conn.exec(query) do |result|
+    def fetch_many(query, params=[])
+        @conn.exec_params(query, params) do |result|
             result.each do |row|
                 yield row
             end
         end
     end
 
-    def fetch_one(query)
+    def fetch_one(query, params=[])
         # Return a hash of the first row, or nil if the result is empty.
-        @conn.exec(query).first
+        @conn.exec_params(query, params).first
     end
 
-    def exec(query)
-        @conn.exec(query) 
+    def exec(query, params=[])
+        @conn.exec_params(query, params) 
     end
 end
