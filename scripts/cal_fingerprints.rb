@@ -12,7 +12,17 @@ require_relative '../utils/cdn'
 $db_client = DBClient.new()
 $cdn_client = CDNClient.new()
 
-def calulate_fingerprint(image_url)
+def calculate_fingerprint_by_filename(filename)
+    img = Phashion::Image.new(filename)
+    fingerprint = img.fingerprint()
+
+    # Since in PostgreSQL, bigint is 64-bit signed int, and unsigned int is not supported, we manually convert
+    # the fingerprint, which is a 64-bit unsigned int, into signed one.
+    fingerprint -= 2 ** 64 if fingerprint >= (2 ** 63)
+    fingerprint
+end
+
+def calculate_fingerprint(image_url)
     # Calcualte the fingerprint of a single image, and return it.
 
     # Since we are using phashion, which can only be feed by a filename, so we download and write the image to a temp file.
@@ -25,8 +35,7 @@ def calulate_fingerprint(image_url)
       f.write open(image_url).read
     end
 
-    img = Phashion::Image.new(tmp_file)
-    filterprint = img.fingerprint()
+    fingerprint = calculate_fingerprint_by_filename(tmp_file)
 
     # delete the tmp file
     File.delete(tmp_file)
@@ -47,12 +56,7 @@ def calculate_all()
     $db_client.fetch_many("SELECT id, key FROM images WHERE fingerprint IS NULL") do |row| 
         begin
             image_url = $cdn_client.full_url(row["key"])
-            fingerprint = calulate_fingerprint(image_url)
-
-            # Since in PostgreSQL, bigint is 64-bit signed int, and unsigned int is not supported, we manually convert
-            # the fingerprint, which is a 64-bit unsigned int, into signed one.
-            fingerprint -= 2 ** 64 if fingerprint >= (2 ** 63)
-
+            fingerprint = calculate_fingerprint(image_url)
             $db_client.exec("UPDATE images SET fingerprint = $1::bigint WHERE id = $2::uuid", [fingerprint, row["id"]])
         rescue Exception => e
             msg = "#{e.message}. Image: #{image_url}"
@@ -68,5 +72,6 @@ def calculate_all()
     log_file.close()
 end
 
-calculate_all()
-
+if __FILE__ == $0
+    calculate_all()
+end

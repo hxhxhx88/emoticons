@@ -1,0 +1,8 @@
+h1 Hello World Again
+
+- if items.any?
+    table#items
+        - for item in items
+            tr
+                td.name = item[:name]
+                td.price = item[:price]
