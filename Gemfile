@@ -6,3 +6,6 @@ gem 'pg'
 gem 'qiniu'
 gem 'colorize'
 gem 'slim'
+group :development do
+    gem 'faker'
+end
