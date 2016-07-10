@@ -109,8 +109,12 @@ module Emoticons
 
             query = "\
                 SELECT \
-                    et.emoticon_id \
+                    e.id AS emoticon_id, \
+                    i.id AS image_id, \
+                    i.key AS image_key \
                 FROM emoticons_tags AS et \
+                JOIN emoticons AS e ON e.id = et.emoticon_id \
+                JOIN images AS i ON e.image_id = i.id \
                 WHERE et.tag_id = ANY( \
                     ( \
                         SELECT \
@@ -161,8 +165,8 @@ module Emoticons
             # We do not do paginaton on this API, since the results are expected to be not to many.
             query = "\
                 SELECT \
-                    i.id, \
-                    i.key, \
+                    i.id AS image_id, \
+                    i.key AS image_key, \
                     #{hamming_distance} AS dist \
                 FROM images AS i \
                 WHERE #{hamming_distance} <= $2 \
