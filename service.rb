@@ -1,5 +1,5 @@
 require 'bundler'
-Bundler.require(:default, ENV['RACK_ENV'] || :development)
+require 'config/environment'
 
 require 'routes/api'
 require 'routes/admin'

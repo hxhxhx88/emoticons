@@ -3,12 +3,14 @@ require_relative '../secrets'
 
 class DBClient
     def initialize
+        root_path = File.expand_path('../..', __FILE__)
+        config=YAML.load_file(File.join(root_path, 'config', 'database.yml'))[ENV["RACK_ENV"]]
         @conn = PG.connect(
-            dbname: Secrets::DB::DBNAME,
-            host: Secrets::DB::HOST,
-            port: Secrets::DB::PORT,
-            user: Secrets::DB::USER,
-            password: Secrets::DB::PASSWORD,
+            dbname: config["database"],
+            host: config["host"],
+            port: config["port"],
+            user: config["username"],
+            password: config["password"],
         )
     end
 
@@ -26,6 +28,6 @@ class DBClient
     end
 
     def exec(query, params=[])
-        @conn.exec_params(query, params) 
+        @conn.exec_params(query, params)
     end
 end

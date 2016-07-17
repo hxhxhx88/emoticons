@@ -14,7 +14,7 @@ module Emoticons
     class API < Grape::API
         format :json
         prefix :api
-        
+
         desc "Search emoticons by keywords"
         params do
            requires :q, type: String, desc:'The query string, should be separated by commas(,).'
@@ -22,6 +22,7 @@ module Emoticons
            optional :offset,  type: Integer, default:0, desc:'The offset.'
            optional :and, type: Boolean, default:true, desc:'Flag to use `and` or `or` as the relationship between keywords.'
            optional :advanced, type: Boolean, default:true, desc:"Flag to use advanced mode."
+           optional :debug, type:Boolean, default:true, desc:"Show emoticons tags detail and url"
         end
         get "/search" do
             # There are many points about this single piece of query.
@@ -35,19 +36,19 @@ module Emoticons
             # returns an empty set, we have to modify the source code and build the PostgreSQL from the source.
             # Download the source files, locate contrib/pg_trgm/trgm.h, and comment out the line
             #   #define KEEPONLYALNUM
-            # It seems that by default pg_trgm only recognize alphabet letters and numbers. Strangely, it seems to work on Ubuntu through 
+            # It seems that by default pg_trgm only recognize alphabet letters and numbers. Strangely, it seems to work on Ubuntu through
             # apt-get, but at least fails on my Mac.
             #
-            # 2) When doing fuzzy match using pg_trgm, we MUST use '%' oprerator to utilize the GIST index. Do NOT write query like 
+            # 2) When doing fuzzy match using pg_trgm, we MUST use '%' oprerator to utilize the GIST index. Do NOT write query like
             #   name <-> '哈哈' < 0.1
             # Instead, write
             #   name % '哈哈'
             # However, the '%' operator use show_limit() as threshold, which can be changed by set_limit().
-            # Please refer to the doc for detail. Besides, about the behavior of index, please refer to 
+            # Please refer to the doc for detail. Besides, about the behavior of index, please refer to
             #   http://stackoverflow.com/questions/11249635/finding-similar-strings-with-postgresql-quickly
             # as well.
             # BTW, create the GIST index using statement like
-            #  CREATE INDEX trgm_idx ON test_trgm USING GIST (t gist_trgm_ops);
+            #  CREATE INDEX tag_trgm ON tags USING GIST (name gist_trgm_ops);
             # as mentioned in the doc.
             #
             # 3) Should create an index on emoticons_tags.tag_id, something like
@@ -76,7 +77,7 @@ module Emoticons
             #   FROM emoticons_tags AS et
             #   WHERE et.tag_id = ANY(
             #       (
-            #           SELECT 
+            #           SELECT
             #               ARRAY(
             #                   SELECT id FROM tags AS t WHERE t.name % 'Natasha'
             #               )
@@ -84,11 +85,11 @@ module Emoticons
             #       )
             #   ORDER BY et.emoticon_id
             #   LIMIT 8;
-            # Please refer to 
+            # Please refer to
             #  http://stackoverflow.com/questions/14987321/postgresql-in-operator-with-subquery-poor-performance
             #
             # (6) The ORDER BY clause is NECESSORY! Without it, a single LIMIT clause will make the query VERY SLOW, especially when the matched
-            # tags are empty. Please refer to 
+            # tags are empty. Please refer to
             #  http://stackoverflow.com/questions/21385555/postgresql-query-very-slow-with-limit-1
             #
             # (7) If the query is still slow, try to reindex the index on et.tag_id, e.g.
@@ -133,8 +134,22 @@ module Emoticons
             $db_client.fetch_many(query, q_params) do |result|
                 results << result.to_h
             end
+            if params[:debug]
 
-            return {
+                results.each do |item|
+                    query= "\
+                        SELECT name FROM tags JOIN emoticons_tags AS et ON et.emoticon_id = '#{item["emoticon_id"]}'\
+                        where tags.id = et.tag_id\
+                    "
+                    item["tags"]=[]
+                    item["url"]=$cdn_client.full_url(item["image_key"])
+                    $db_client.fetch_many(query) do |result|
+                        item["tags"] << result["name"]
+                    end
+                end
+            end
+
+            {
                 results: results
             }
         end
@@ -173,7 +188,7 @@ module Emoticons
                 ORDER BY dist ASC \
             "
             q_params = [fingerprint, hamming_threshold]
-            
+
             # Fetch the results.
             results = []
             $db_client.fetch_many(query, q_params) do |result|
