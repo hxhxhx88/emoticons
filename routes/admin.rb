@@ -15,12 +15,13 @@ module Emoticons
 
         get "/" do
             q = params[:q].nil? ? "" : params[:q]
-            
+            should_and = params[:rel] == "and"
+
             results = search_by_keywords({
                 q: q,
                 limit: 20,
                 offset: 0,
-                and: params[:rel] == "and",
+                and: should_and,
                 debug: true
             })
             
@@ -36,7 +37,7 @@ module Emoticons
                 }
             end
 
-            Slim::Template.new('public/html/index.slim').render(nil, {emoticons: emoticons, q: q})
+            Slim::Template.new('public/html/index.slim').render(nil, {emoticons: emoticons, q: q, should_and: should_and})
         end
     end
 end

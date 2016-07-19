@@ -6,8 +6,8 @@ html
     body
         form action="/admin"
             input type="text" name="q" placeholder="use comma(,) to separate" size="35" value=q
-            input type="radio" name="rel" value="and" checked=true AND
-            input type="radio" name="rel" value="or" OR
+            input type="radio" name="rel" value="and" checked=should_and AND
+            input type="radio" name="rel" value="or" checked=!should_and OR
             input type="submit" value="Search!"
 
         - unless q.empty?
