@@ -54,77 +54,114 @@ module Emoticons
             # 3) Should create an index on emoticons_tags.tag_id, something like
             #  CREATE UNIQUE INDEX emoticons_tags_ids_idx ON emoticons_tags (tag_id, emoticon_id);
             #
-            # 4) Naively, we may write the query like this:
-            #   SELECT
-            #       et.emoticon_id
-            #   FROM emoticons_tags AS et
-            #   JOIN tags AS t ON et.tag_id = t.id AND t.name % '哈哈'
-            #   ORDER BY et.emoticon_id
-            #   LIMIT 8;
-            # However, it turns out to be VERY SLOW, since PG can not utilize the index on et.tag_id, which will result in a seq scan.
-            #
-            # 5) Then, it is natural to think to change the query to
-            #   SELECT
-            #     et.emoticon_id
-            #   FROM emoticons_tags AS et
-            #   WHERE et.tag_id IN (SELECT id FROM tags AS t WHERE t.name % '哈哈')
-            #   ORDER BY et.emoticon_id
-            #   LIMIT 8;
-            # since we know where clause like `WHERE et.tag_id IN ('xxx')` will trigger the index. However, the above query does not, since
-            # the set of IN clause is not a constant. We have to make it into a constant. Finally, the query is optimized to
-            #   SELECT
-            #       et.emoticon_id
-            #   FROM emoticons_tags AS et
-            #   WHERE et.tag_id = ANY(
-            #       (
-            #           SELECT
-            #               ARRAY(
-            #                   SELECT id FROM tags AS t WHERE t.name % 'Natasha'
-            #               )
-            #           )::uuid[]
-            #       )
-            #   ORDER BY et.emoticon_id
-            #   LIMIT 8;
-            # Please refer to
-            #  http://stackoverflow.com/questions/14987321/postgresql-in-operator-with-subquery-poor-performance
-            #
-            # (6) The ORDER BY clause is NECESSORY! Without it, a single LIMIT clause will make the query VERY SLOW, especially when the matched
+            # 4) The ORDER BY clause is NECESSORY! Without it, a single LIMIT clause will make the query VERY SLOW, especially when the matched
             # tags are empty. Please refer to
             #  http://stackoverflow.com/questions/21385555/postgresql-query-very-slow-with-limit-1
             #
-            # (7) If the query is still slow, try to reindex the index on et.tag_id, e.g.
+            # 5) If the query is still slow, try to reindex the index on et.tag_id, e.g.
             #  REINDEX INDEX emoticons_tags_ids_idx
+            #
+            # 6) To enable fast debug query, you should add index on emoticon_id of emoticons_tags, e.g.
+            #  CREATE INDEX emoticons_tags_emoticon_id_idx ON emoticons_tags (emoticon_id);
+            #
+            # 7) A typical whole query will look like the following, from which hopefully you can see what I am doing:
+            # WITH hits AS (
+            #     SELECT
+            #         e.id AS emoticon_id,
+            #         e.image_id AS image_id,
+            #         MIN(t.name <-> 'C罗') AS distance
+            #     FROM emoticons AS e
+            #     JOIN emoticons_tags AS et ON et.emoticon_id = e.id
+            #     JOIN tags AS t ON t.id = et.tag_id AND t.name % 'C罗'
+            #     GROUP BY e.id
+            #
+            #     UNION ALL
+            #   
+            #     SELECT
+            #         e.id AS emoticon_id,
+            #         e.image_id AS image_id,
+            #         MIN(t.name <-> '中文') AS distance
+            #     FROM emoticons AS e
+            #     JOIN emoticons_tags AS et ON et.emoticon_id = e.id
+            #     JOIN tags AS t ON t.id = et.tag_id AND t.name % '中文'
+            #     GROUP BY e.id
+            # )
+            # SELECT
+            #     h.emoticon_id,
+            #     (SUM(h.distance) + 1 * (2 - COUNT(h.distance)))/ 2 AS distance,
+            #     MAX(i.key) AS image_key,
+            #     ARRAY(
+            #         SELECT
+            #             t.name
+            #         FROM tags AS t
+            #         JOIN emoticons_tags AS et ON et.tag_id = t.id
+            #         WHERE et.emoticon_id = h.emoticon_id
+            #     ) AS tags
+            # FROM hits AS h
+            # JOIN images AS i ON h.image_id = i.id
+            # GROUP BY h.emoticon_id
+            # ORDER BY distance
+            # LIMIT 20
+            # OFFSET 0;
+
 
             # Split keywords and form the WHERE clause in the SQL
             qs = params[:q].split(',')
-            where_clauses = []
+
+            # The query template for a single match
+            query_for_single_match = "\
+                SELECT \
+                    e.id AS emoticon_id, \
+                    e.image_id AS image_id, \
+                    MIN(t.name <-> %s) AS distance \
+                FROM emoticons AS e \
+                JOIN emoticons_tags AS et ON et.emoticon_id = e.id \
+                JOIN tags AS t ON t.id = et.tag_id AND t.name %% %s \
+                GROUP BY e.id \
+            "
+
             q_params = []
+            
+            matches = []
             qs.each_with_index do |keyword, idx|
-                where_clauses << "t.name % $#{idx + 1}::text"
+                matches << (query_for_single_match % ["$#{idx * 2 + 1}::text", "$#{idx * 2 + 2}::text"])
+                q_params << keyword
                 q_params << keyword
             end
 
-            where_clause = params[:and] ? where_clauses.join(' AND ') : where_clauses.join(' OR ')
-            p where_clause
-            q_params += [params[:limit], params[:offset]]
+            sub_query = matches.join("UNION ALL")
+            having_clause = params[:and] ? "HAVING COUNT(h.emoticon_id) = #{qs.length}" : ""
 
-            query = "\
-                SELECT \
-                    e.id AS emoticon_id, \
-                    i.id AS image_id, \
-                    i.key AS image_key \
-                FROM emoticons_tags AS et \
-                JOIN emoticons AS e ON e.id = et.emoticon_id \
-                JOIN images AS i ON e.image_id = i.id \
-                WHERE et.tag_id = ANY( \
-                    ( \
+            tags_query = ""
+            if params[:debug]
+                # Note the leading comma!
+                tags_query = "\
+                    , \
+                    ARRAY( \
                         SELECT \
-                            ARRAY( \
-                                SELECT id FROM tags AS t WHERE #{where_clause} \
-                            ) \
-                    )::uuid[] \
+                            t.name \
+                        FROM tags AS t \
+                        JOIN emoticons_tags AS et ON et.tag_id = t.id \
+                        WHERE et.emoticon_id = h.emoticon_id \
+                    ) AS tags \
+                "
+            end
+
+            q_params += [params[:limit], params[:offset]]
+            query = "\
+                WITH hits AS ( \
+                    #{sub_query} \
                 ) \
-                ORDER BY et.emoticon_id \
+                SELECT \
+                    h.emoticon_id, \
+                    (SUM(h.distance) + 1 * (#{qs.length} - COUNT(h.distance))) / #{qs.length} AS distance, \
+                    MAX(i.key) AS image_key \
+                    #{tags_query}
+                FROM hits AS h \
+                JOIN images AS i ON h.image_id = i.id \
+                GROUP BY h.emoticon_id \
+                #{having_clause}
+                ORDER BY distance
                 LIMIT $#{q_params.length - 1}::integer \
                 OFFSET $#{q_params.length}::integer \
             "
@@ -133,20 +170,6 @@ module Emoticons
             results = []
             $db_client.fetch_many(query, q_params) do |result|
                 results << result.to_h
-            end
-            if params[:debug]
-
-                results.each do |item|
-                    query= "\
-                        SELECT name FROM tags JOIN emoticons_tags AS et ON et.emoticon_id = '#{item["emoticon_id"]}'\
-                        where tags.id = et.tag_id\
-                    "
-                    item["tags"]=[]
-                    item["url"]=$cdn_client.full_url(item["image_key"])
-                    $db_client.fetch_many(query) do |result|
-                        item["tags"] << result["name"]
-                    end
-                end
             end
 
             {
