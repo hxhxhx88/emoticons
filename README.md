@@ -9,25 +9,19 @@
 
 ## Create the credential file
 
-Write following to `secrets.rb`
+Write following to `config/database.yml`
 
 ```ruby
 
-module Secrets
-  module Qiniu
-    ACCESS_KEY = "qiniu_access_key"
-    SECRET_KEY = "qiniu_secret_key"
-  end
-
-  module DB
-    HOST = "localhost"
-    PORT = 5432
-    DBNAME = "emoticons"
-    USER = nil
-    PASSWORD = nil
-  end
-end
-
+development:
+  adapter: postgresql
+  encoding: UTF-8
+  host: localhost
+  database: database
+  username: username
+  password: password
+  port: 5432
+  pool: 10
 ```
 
 # Run
@@ -36,7 +30,9 @@ end
 
 # Usage
 
-Refer to test/Makefile
+Refer to test/Makefile, or view
+
+> localhost:9292/admin
 
 # TODO
 
