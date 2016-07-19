@@ -1,0 +1,19 @@
+html
+    head
+        / This code is IMPORTANT, otherwise the `q` field of the form will not handle Chinese correctly!
+        meta http-equiv="Content-Type" content="text/html; charset=utf-8"
+
+    body
+        form action="/admin"
+            input type="text" name="q" placeholder="use comma(,) to separate" size="35" value=q
+            input type="radio" name="rel" value="and" checked=true AND
+            input type="radio" name="rel" value="or" OR
+            input type="submit" value="Search!"
+
+        - unless q.empty?
+            p Count: #{emoticons.length}
+
+            - emoticons.each do |e|
+                div
+                    img src=e[:url]
+                    span = e[:tags]
